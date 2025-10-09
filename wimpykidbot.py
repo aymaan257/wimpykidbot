@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 
 TOKEN = os.getenv("DISCORD_TOKEN") or "YOUR_DISCORD_BOT_TOKEN_HERE"
-GUILD_ID = 1424078048516640799  # Replace this with your server ID
+GUILD_ID = 1391105396910981211
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -62,11 +62,12 @@ quotes = [
 @client.event
 async def on_ready():
     try:
-        await tree.sync(guild=discord.Object(id=GUILD_ID))
-        print("Commands synced to the server.")
+        guild = discord.Object(id=GUILD_ID)
+        await tree.sync(guild=guild)
+        print(f"✅ Commands synced successfully to guild ID: {GUILD_ID}")
     except Exception as e:
-        print("Error syncing commands:", e)
-    print(f"Logged in as {client.user}")
+        print("❌ Error syncing commands:", e)
+    print(f"🤖 Logged in as {client.user}")
 
 def is_locked_channel(interaction: discord.Interaction):
     global locked_channel_id
@@ -77,14 +78,29 @@ def is_locked_channel(interaction: discord.Interaction):
 def is_admin(interaction: discord.Interaction):
     return interaction.user.guild_permissions.administrator or interaction.user == interaction.guild.owner
 
-@tree.command(name="lock", description="Lock the bot to this channel only (Admins only)", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="help", description="Show available commands", guild=discord.Object(id=GUILD_ID))
+async def help_command(interaction: discord.Interaction):
+    if not is_locked_channel(interaction):
+        await interaction.response.send_message("❌ This bot is locked to another channel.", ephemeral=True)
+        return
+    help_text = (
+        "📖 **Available Commands:**\n"
+        "/help - Show this message\n"
+        "/trivia - Play a Wimpy Kid trivia question\n"
+        "/quote - Get a random Wimpy Kid quote\n"
+        "/lock - Lock the bot to this channel (Admins only)\n"
+        "/unlock - Unlock the bot (Admins only)"
+    )
+    await interaction.response.send_message(help_text)
+
+@tree.command(name="lock", description="Lock the bot to this channel (Admins only)", guild=discord.Object(id=GUILD_ID))
 async def lock(interaction: discord.Interaction):
     global locked_channel_id
     if not is_admin(interaction):
         await interaction.response.send_message("❌ Only admins or the server owner can lock the bot.", ephemeral=True)
         return
     locked_channel_id = interaction.channel_id
-    await interaction.response.send_message(f"🔒 The bot is now locked to this channel: {interaction.channel.mention}")
+    await interaction.response.send_message(f"🔒 The bot is now locked to {interaction.channel.mention}.")
 
 @tree.command(name="unlock", description="Unlock the bot (Admins only)", guild=discord.Object(id=GUILD_ID))
 async def unlock(interaction: discord.Interaction):
@@ -93,63 +109,40 @@ async def unlock(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Only admins or the server owner can unlock the bot.", ephemeral=True)
         return
     locked_channel_id = None
-    await interaction.response.send_message("🔓 The bot is now unlocked and will respond in any channel.")
+    await interaction.response.send_message("🔓 The bot is now unlocked and can respond anywhere.")
+
+@tree.command(name="quote", description="Get a random Wimpy Kid quote", guild=discord.Object(id=GUILD_ID))
+async def quote(interaction: discord.Interaction):
+    if not is_locked_channel(interaction):
+        await interaction.response.send_message("❌ This bot is locked to another channel.", ephemeral=True)
+        return
+    await interaction.response.send_message(random.choice(quotes))
 
 @tree.command(name="trivia", description="Play a Wimpy Kid trivia question!", guild=discord.Object(id=GUILD_ID))
 async def trivia(interaction: discord.Interaction):
     if not is_locked_channel(interaction):
-        await interaction.response.send_message("This bot is locked to another channel.", ephemeral=True)
+        await interaction.response.send_message("❌ This bot is locked to another channel.", ephemeral=True)
         return
+
     question = random.choice(list(trivia_questions.keys()))
     answer = trivia_questions[question]
-    await interaction.response.send_message(question)
-    question_message = await interaction.original_response()
+
+    await interaction.response.send_message(f"🧠 Trivia Time!\n{question}")
 
     def check(m):
         return m.author == interaction.user and m.channel == interaction.channel
 
     try:
         msg = await client.wait_for("message", timeout=15.0, check=check)
-        await question_message.delete()
-
         if msg.content.strip().lower() == answer.lower():
-            result_message = await interaction.channel.send("✅ Correct!")
+            await interaction.channel.send("✅ Correct!")
         else:
-            result_message = await interaction.channel.send(f"❌ Wrong! The answer was **{answer}**.")
-
-        await asyncio.sleep(5)
-        await result_message.delete()
-        await msg.delete()
-
+            await interaction.channel.send(f"❌ Wrong! The answer was **{answer}**.")
     except asyncio.TimeoutError:
-        await question_message.delete()
-        timeout_message = await interaction.channel.send(f"⏰ Time’s up! The answer was **{answer}**.")
-        await asyncio.sleep(5)
-        await timeout_message.delete()
-
-@tree.command(name="quote", description="Get a random Wimpy Kid quote", guild=discord.Object(id=GUILD_ID))
-async def quote(interaction: discord.Interaction):
-    if not is_locked_channel(interaction):
-        await interaction.response.send_message("This bot is locked to another channel.", ephemeral=True)
-        return
-    await interaction.response.send_message(random.choice(quotes))
-
-@tree.command(name="help", description="Show available commands", guild=discord.Object(id=GUILD_ID))
-async def help_command(interaction: discord.Interaction):
-    if not is_locked_channel(interaction):
-        await interaction.response.send_message("This bot is locked to another channel.", ephemeral=True)
-        return
-    text = (
-        "/trivia - Play a Wimpy Kid trivia question\n"
-        "/quote - Get a random Wimpy Kid quote\n"
-        "/help - Show this message\n"
-        "/lock - Lock the bot to this channel (Admins only)\n"
-        "/unlock - Unlock the bot (Admins only)"
-    )
-    await interaction.response.send_message(text)
+        await interaction.channel.send(f"⏰ Time’s up! The answer was **{answer}**.")
 
 if __name__ == "__main__":
     if TOKEN == "YOUR_DISCORD_BOT_TOKEN_HERE":
-        print("Please add your bot token before running this script.")
+        print("⚠️ Please add your bot token before running this script.")
     else:
         client.run(TOKEN)
