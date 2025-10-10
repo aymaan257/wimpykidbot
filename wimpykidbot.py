@@ -146,3 +146,4 @@ if __name__ == "__main__":
         print("⚠️ Please add your bot token before running this script.")
     else:
         client.run(TOKEN)
+
