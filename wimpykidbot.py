@@ -113,7 +113,7 @@ async def unlock_cmd(interaction: discord.Interaction):
 
 class TriviaView(discord.ui.View):
     def __init__(self, correct):
-        super().__init__(timeout=30)
+        super().__init__(timeout=15)
         self.correct = correct
 
         options = random.sample(list(trivia_questions.values()), k=3)
@@ -150,3 +150,4 @@ async def trivia_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(f"🧠 **Trivia Time!**\n{question}", view=view)
 
 client.run(TOKEN)
+
