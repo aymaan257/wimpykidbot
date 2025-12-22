@@ -32,7 +32,7 @@ trivia_questions = {
     "True or False: Greg’s pen pal is named Mamadou.": "True",
     "In which book did Mom and Dad go away and leave Greg and Rodrick in charge for the night?": "Rodrick Rules",
     "How many people had to share the ice-cream cone that Mrs Jefferson bought while on holiday in Dog Days?": "Four",
-    "True or False: Mom has a Teddy Cuddles bumper sticker on her car.": "False",
+    "True or False: Mom has a Teddy Cuddles bumper sticker on her car.": "True",
     "Where did Greg and Rowley’s family stay during their holiday in Dog Days?": "Quiet Cove",
     "What does Greg use to take his books to school in Hard Luck?": "A wheeled suitcase",
     "What is the name of Rowley’s comic strip that becomes a catchphrase?": "Zoo-wee-mama!",
@@ -165,3 +165,4 @@ async def trivia(interaction: discord.Interaction):
     await send_question()
 
 client.run(TOKEN)
+
