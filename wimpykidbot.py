@@ -1,7 +1,7 @@
 import os
 import json
 import random
-import asyncio
+import time
 import discord
 from discord import app_commands
 
@@ -17,6 +17,7 @@ tree = app_commands.CommandTree(client)
 locked_channel_id = None
 earn_cooldowns = {}
 
+# ---------- data ----------
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w") as f:
@@ -29,20 +30,21 @@ def save_data(data):
         json.dump(data, f, indent=2)
 
 def has_staff(member: discord.Member):
-    return any(role.name.lower() == STAFF_ROLE_NAME for role in member.roles)
+    return any(role.name == STAFF_ROLE_NAME for role in member.roles)
 
-def blocked(interaction):
+def is_locked(interaction: discord.Interaction):
     return locked_channel_id is not None and interaction.channel_id != locked_channel_id
 
+# ---------- trivia ----------
 trivia_questions = {
     "Who is Greg's best friend?": "Rowley",
     "What is the name of Greg’s brother in the band Löded Diper?": "Rodrick",
     "What does Greg hate most in the Cheese Touch game?": "The Cheese",
     "Who is Greg's little brother?": "Manny",
     "Who does Greg try to impress by the pool in Dog Days?": "Holly Hills",
-    "What is the name of the book club that Greg’s mom sets up in Dog Days?": "Reading is Fun",
+    "What is the name of the book club Greg’s mom sets up in Dog Days?": "Reading is Fun",
     "Why was Greg trapped indoors with his family during Cabin Fever?": "He got snowed in",
-    "In The Ugly Truth, what fundraiser happens?": "Lock-in",
+    "What fundraiser happens in The Ugly Truth?": "Lock-in",
     "Who wins Athlete of the Month in book one?": "P. Mudd",
     "Where did Rowley go on holiday in Rodrick Rules?": "Australia",
     "What lawn-care company do Greg and Rowley start?": "V.I.P Lawn Service",
@@ -50,31 +52,38 @@ trivia_questions = {
     "What did Manny shoot out of his nose?": "Milk",
     "Where did Greg’s family stay in Dog Days?": "Quiet Cove",
     "What does Greg use to take books to school in Hard Luck?": "A wheeled suitcase",
-    "What is Rowley’s comic strip catchphrase?": "Zoo-wee-mama!"
+    "What is Rowley’s comic strip catchphrase?": "Zoo-wee-mama!",
+    "In what transport does Greg want to arrive at the Valentine’s Dance?": "A limousine",
+    "Why didn’t Greg’s family stay at the campsite in The Last Straw?": "It was raining",
+    "Why did Greg pass geography easily in book one?": "He sat next to the world map"
 }
 
-ALL_ANSWERS = list(trivia_questions.values())
+wrong_answer_pool = [
+    "Frank", "Susan", "Fregley", "Chirag", "Bryce",
+    "The Mud", "The Slide", "The Snow",
+    "California", "Florida", "Canada",
+    "Book Club", "Readers United",
+    "Sleepover", "Fundraiser",
+    "Spot", "Buster",
+    "Backpack", "Briefcase",
+    "Zoo-wee-wow!", "Boom-shaka!"
+]
 
 class TriviaView(discord.ui.View):
-    def __init__(self, interaction, correct):
+    def __init__(self, correct_answer: str):
         super().__init__(timeout=15)
-        self.interaction = interaction
-        self.correct = correct
+        options = {correct_answer}
+        while len(options) < 4:
+            wrong = random.choice(wrong_answer_pool)
+            if wrong.lower() != correct_answer.lower():
+                options.add(wrong)
 
-        wrong = random.sample([a for a in ALL_ANSWERS if a != correct], 3)
-        options = wrong + [correct]
-        random.shuffle(options)
-
-        for opt in options:
-            self.add_item(TriviaButton(opt, correct))
-
-        self.add_item(StopButton())
+        for label in random.sample(list(options), len(options)):
+            self.add_item(TriviaButton(label, correct_answer))
 
     async def on_timeout(self):
-        await self.interaction.edit_original_response(
-            content=f"⏰ Time’s up! Answer was **{self.correct}**",
-            view=None
-        )
+        for child in self.children:
+            child.disabled = True
 
 class TriviaButton(discord.ui.Button):
     def __init__(self, label, correct):
@@ -82,35 +91,21 @@ class TriviaButton(discord.ui.Button):
         self.correct = correct
 
     async def callback(self, interaction: discord.Interaction):
-        if interaction.user != interaction.message.interaction.user:
-            await interaction.response.send_message("Not your trivia.", ephemeral=True)
-            return
+        for child in self.view.children:
+            child.disabled = True
 
         if self.label == self.correct:
-            await interaction.response.edit_message("✅ Correct! Next question...", view=None)
-            await start_trivia(interaction)
+            await interaction.response.edit_message(
+                content=f"✅ Correct! **{self.correct}**",
+                view=self.view
+            )
         else:
             await interaction.response.edit_message(
-                f"❌ Wrong! Answer was **{self.correct}**",
-                view=None
+                content=f"❌ Wrong! Correct answer was **{self.correct}**",
+                view=self.view
             )
 
-class StopButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label="Stop", style=discord.ButtonStyle.danger)
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.edit_message("🛑 Trivia stopped.", view=None)
-
-async def start_trivia(interaction):
-    if blocked(interaction):
-        return
-    question, answer = random.choice(list(trivia_questions.items()))
-    await interaction.followup.send(
-        f"🧠 **Trivia**\n{question}",
-        view=TriviaView(interaction, answer)
-    )
-
+# ---------- quotes ----------
 quotes = [
     "I'm not crazy, okay? My reality is just different from yours. - Greg",
     "Zoo-Wee Mama! - Rowley",
@@ -129,10 +124,11 @@ quotes = [
     "It’s not easy being this awesome. - Greg"
 ]
 
+# ---------- commands ----------
 @tree.command(name="help", guild=discord.Object(id=GUILD_ID))
 async def help_cmd(interaction: discord.Interaction):
-    if blocked(interaction):
-        await interaction.response.send_message("🔒 Bot locked.", ephemeral=True)
+    if is_locked(interaction):
+        await interaction.response.send_message("🔒 Bot is locked to another channel.", ephemeral=True)
         return
     await interaction.response.send_message(
         "Hey, I'm Wimpy kid Bot!\n"
@@ -150,43 +146,45 @@ async def help_cmd(interaction: discord.Interaction):
         "/unlock – Unlock bot (staffs only)"
     )
 
+@tree.command(name="trivia", guild=discord.Object(id=GUILD_ID))
+async def trivia(interaction: discord.Interaction):
+    if is_locked(interaction):
+        await interaction.response.send_message("🔒 Bot is locked to another channel.", ephemeral=True)
+        return
+    q, a = random.choice(list(trivia_questions.items()))
+    await interaction.response.send_message(
+        f"🧠 **Trivia**\n{q}",
+        view=TriviaView(a)
+    )
+
 @tree.command(name="quote", guild=discord.Object(id=GUILD_ID))
 async def quote(interaction: discord.Interaction):
-    if blocked(interaction):
-        await interaction.response.send_message("🔒 Bot locked.", ephemeral=True)
+    if is_locked(interaction):
+        await interaction.response.send_message("🔒 Bot is locked to another channel.", ephemeral=True)
         return
     await interaction.response.send_message(random.choice(quotes))
 
-@tree.command(name="trivia", guild=discord.Object(id=GUILD_ID))
-async def trivia(interaction: discord.Interaction):
-    if blocked(interaction):
-        await interaction.response.send_message("🔒 Bot locked.", ephemeral=True)
+@tree.command(name="lock", guild=discord.Object(id=GUILD_ID))
+async def lock(interaction: discord.Interaction):
+    if not has_staff(interaction.user):
+        await interaction.response.send_message("❌ Staffs only.", ephemeral=True)
         return
-    await interaction.response.send_message("Starting trivia...")
-    await start_trivia(interaction)
+    global locked_channel_id
+    locked_channel_id = interaction.channel_id
+    await interaction.response.send_message("🔒 Bot locked to this channel.")
 
-@tree.command(name="balance", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(user="Staff only: check another user's Mom Bucks")
-async def balance(interaction: discord.Interaction, user: discord.Member = None):
-    data = load_data()
-
-    if user:
-        if not has_staff(interaction.user):
-            await interaction.response.send_message("❌ Staffs only.", ephemeral=True)
-            return
-        amount = data.get(str(user.id), 0)
-        await interaction.response.send_message(
-            f"💵 {user.mention} has **{amount} Mom Bucks**."
-        )
-    else:
-        amount = data.get(str(interaction.user.id), 0)
-        await interaction.response.send_message(
-            f"💵 You have **{amount} Mom Bucks**."
-        )
+@tree.command(name="unlock", guild=discord.Object(id=GUILD_ID))
+async def unlock(interaction: discord.Interaction):
+    if not has_staff(interaction.user):
+        await interaction.response.send_message("❌ Staffs only.", ephemeral=True)
+        return
+    global locked_channel_id
+    locked_channel_id = None
+    await interaction.response.send_message("🔓 Bot unlocked.")
 
 @tree.command(name="earn", guild=discord.Object(id=GUILD_ID))
 async def earn(interaction: discord.Interaction):
-    now = asyncio.get_event_loop().time()
+    now = time.time()
     uid = str(interaction.user.id)
 
     if uid in earn_cooldowns and now - earn_cooldowns[uid] < 3600:
@@ -201,38 +199,22 @@ async def earn(interaction: discord.Interaction):
     earn_cooldowns[uid] = now
     await interaction.response.send_message(f"💰 You earned **{amount} Mom Bucks**!")
 
-@tree.command(name="addbucks", guild=discord.Object(id=GUILD_ID))
-async def addbucks(interaction: discord.Interaction, user: discord.Member, amount: int):
-    if not has_staff(interaction.user):
-        await interaction.response.send_message("❌ Staffs only.", ephemeral=True)
-        return
+@tree.command(name="balance", guild=discord.Object(id=GUILD_ID))
+async def balance(interaction: discord.Interaction, user: discord.Member = None):
     data = load_data()
-    uid = str(user.id)
-    data[uid] = data.get(uid, 0) + abs(amount)
-    save_data(data)
-    await interaction.response.send_message(f"✅ Added Mom Bucks to {user.mention}")
 
-@tree.command(name="lock", guild=discord.Object(id=GUILD_ID))
-async def lock(interaction: discord.Interaction):
-    global locked_channel_id
-    if not has_staff(interaction.user):
+    if user and not has_staff(interaction.user):
         await interaction.response.send_message("❌ Staffs only.", ephemeral=True)
         return
-    locked_channel_id = interaction.channel_id
-    await interaction.response.send_message("🔒 Bot locked to this channel.")
 
-@tree.command(name="unlock", guild=discord.Object(id=GUILD_ID))
-async def unlock(interaction: discord.Interaction):
-    global locked_channel_id
-    if not has_staff(interaction.user):
-        await interaction.response.send_message("❌ Staffs only.", ephemeral=True)
-        return
-    locked_channel_id = None
-    await interaction.response.send_message("🔓 Bot unlocked.")
+    target = user or interaction.user
+    amount = data.get(str(target.id), 0)
+    await interaction.response.send_message(f"💵 {target.display_name} has **{amount} Mom Bucks**.")
 
+# ---------- ready ----------
 @client.event
 async def on_ready():
     await tree.sync(guild=discord.Object(id=GUILD_ID))
-    print("Bot ready")
+    print("Bot is ready")
 
 client.run(TOKEN)
